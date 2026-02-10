@@ -11,6 +11,7 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  Edit2,
 } from "lucide-react";
 import { QuoteViewer } from "./QuoteViewer";
 import { downloadDocument } from "../utils/pdfGenerator";
@@ -21,6 +22,7 @@ type QuotesListProps = {
   onUpdate: () => void;
   refreshToken?: number;
   onViewQuote?: (quote: QuoteWithItems) => void;
+  onEditQuote?: (quote: QuoteWithItems) => void;
 };
 
 export type QuoteWithItems = Quote & {
@@ -32,6 +34,7 @@ export function QuotesList({
   onUpdate,
   refreshToken = 0,
   onViewQuote,
+  onEditQuote,
 }: QuotesListProps) {
   const { profile } = useAuth();
   const [quotes, setQuotes] = useState<QuoteWithItems[]>([]);
@@ -163,7 +166,50 @@ export function QuotesList({
     )
       return;
 
-    const orderNumber = `CMD-${Date.now()}`;
+    // Fetch Company Name for ID generation
+    const { data: companyData } = await supabase
+      .from("companies")
+      .select("name")
+      .eq("id", quote.company_id)
+      .single();
+
+    const companyName = companyData?.name
+      ? companyData.name
+          .trim()
+          .split(/\s+/)
+          .map((word: string) => word[0])
+          .join("")
+          .toUpperCase()
+      : "ENT";
+
+    const currentYear = new Date().getFullYear();
+    const prefix = `${companyName}_CMD-${currentYear}`;
+
+    // Find last order to increment sequence
+    const { data: lastOrder } = await supabase
+      .from("delivery_orders")
+      .select("order_number")
+      .eq("company_id", quote.company_id)
+      .ilike("order_number", `${prefix}%`)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    let sequence = 1;
+    if (lastOrder && lastOrder.order_number) {
+      const parts = lastOrder.order_number.split("-");
+      const lastSeqPart = parts[parts.length - 1]; 
+      if (lastSeqPart.length >= 5) {
+          const seqStr = lastSeqPart.slice(-5);
+          const seqNum = parseInt(seqStr);
+          if (!isNaN(seqNum)) {
+            sequence = seqNum + 1;
+          }
+      }
+    }
+
+    const orderNumber = `${prefix}${sequence.toString().padStart(5, "0")}`;
+
     const { error } = await supabase.from("delivery_orders").insert({
       order_number: orderNumber,
       quote_id: quote.id,
@@ -182,6 +228,21 @@ export function QuotesList({
       onUpdate();
       alert("Devis converti en commande de livraison avec succès");
     }
+  }
+
+  async function handleEdit(quote: Quote) {
+    if (!onEditQuote) return;
+
+    // Fetch items
+    const { data: items } = await supabase
+      .from("quote_items")
+      .select("*")
+      .eq("quote_id", quote.id);
+
+    onEditQuote({
+      ...quote,
+      items: items || [],
+    });
   }
 
   const statusLabels = {
@@ -429,6 +490,15 @@ export function QuotesList({
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex justify-end items-center gap-2">
+                        {quote.status === "draft" && (
+                          <button
+                            onClick={() => handleEdit(quote)}
+                            className="p-1 text-indigo-600 hover:text-indigo-900 hover:bg-indigo-50 rounded-full transition-colors"
+                            title="Modifier"
+                          >
+                            <Edit2 className="w-5 h-5" />
+                          </button>
+                        )}
                         <button
                           onClick={() => loadQuoteWithItems(quote)}
                           className="p-1 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded-full transition-colors"

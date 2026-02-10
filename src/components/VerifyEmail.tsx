@@ -34,7 +34,20 @@ export function VerifyEmail() {
           throw new Error(data.error || "Échec de la vérification");
         }
 
+        // Auto-login if session is returned
+        if (data.session) {
+          console.log("Session validée, connexion auto...");
+          await supabase.auth.setSession(data.session);
+          // Wait briefly for storage to persist
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+
         setStatus("success");
+
+        // Auto redirect after delay
+        setTimeout(() => {
+          window.location.href = "/";
+        }, 1500);
       } catch (err: any) {
         setStatus("error");
         setMessage(err.message);
@@ -80,14 +93,14 @@ export function VerifyEmail() {
             Email Vérifié !
           </h2>
           <p className="text-gray-600 mb-6">
-            Votre adresse email a été confirmée avec succès. Vous pouvez
-            maintenant vous connecter.
+            Votre adresse email a été confirmée avec succès. Vous allez être
+            redirigé vers votre espace...
           </p>
           <button
             onClick={() => (window.location.href = "/")}
             className="w-full bg-blue-600 text-white rounded-lg px-4 py-2 hover:bg-blue-700 transition-colors"
           >
-            Aller à la page de connexion
+            Aller à mon espace
           </button>
         </div>
       </div>

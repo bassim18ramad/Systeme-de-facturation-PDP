@@ -17,6 +17,7 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
+  Edit2,
 } from "lucide-react";
 import { InvoiceViewer } from "./InvoiceViewer";
 import { downloadDocument } from "../utils/pdfGenerator";
@@ -42,6 +43,12 @@ export function InvoicesList({
   const { profile } = useAuth();
   const [invoices, setInvoices] = useState<InvoiceWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({
+    payment_date: "",
+    status: "unpaid",
+    invoice_number: "",
+  });
   const [selectedInvoice, setSelectedInvoice] =
     useState<InvoiceWithDetails | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -171,6 +178,39 @@ export function InvoicesList({
       loadInvoices();
       onUpdate();
     }
+  }
+
+  async function handleUpdateInvoice(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingId) return;
+
+    const { error } = await supabase
+      .from("invoices")
+      .update({
+        invoice_number: editForm.invoice_number,
+        payment_date: editForm.payment_date || null,
+        status: editForm.status,
+      })
+      .eq("id", editingId);
+
+    if (error) {
+      alert("Erreur lors de la mise à jour");
+    } else {
+      setEditingId(null);
+      loadInvoices();
+      onUpdate();
+    }
+  }
+
+  function startEdit(invoice: InvoiceWithDetails) {
+    setEditingId(invoice.id);
+    setEditForm({
+      invoice_number: invoice.invoice_number,
+      payment_date: invoice.payment_date
+        ? invoice.payment_date.split("T")[0]
+        : "",
+      status: invoice.status as string,
+    });
   }
 
   async function handleDownload(
@@ -311,6 +351,73 @@ export function InvoicesList({
 
   return (
     <>
+      {editingId && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full animate-slide-up">
+            <h3 className="text-lg font-bold mb-4">Modifier la Facture</h3>
+            <form onSubmit={handleUpdateInvoice} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Numéro de facture
+                </label>
+                <input
+                  type="text"
+                  value={editForm.invoice_number}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, invoice_number: e.target.value })
+                  }
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Date de paiement
+                </label>
+                <input
+                  type="date"
+                  value={editForm.payment_date}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, payment_date: e.target.value })
+                  }
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Statut
+                </label>
+                <select
+                  value={editForm.status}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, status: e.target.value })
+                  }
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                >
+                  <option value="unpaid">Impayée</option>
+                  <option value="paid">Payée</option>
+                  <option value="cancelled">Annulée</option>
+                </select>
+              </div>
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  type="button"
+                  onClick={() => setEditingId(null)}
+                  className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded"
+                >
+                  Enregistrer
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden animate-fade-in">
         <div className="p-4 border-b border-gray-200 bg-gray-50 flex items-center gap-4">
           <div className="relative flex-1 max-w-md">
@@ -395,6 +502,13 @@ export function InvoicesList({
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex justify-end items-center gap-2">
+                        <button
+                          onClick={() => startEdit(invoice)}
+                          className="p-1 text-indigo-600 hover:text-indigo-900 hover:bg-indigo-50 rounded-full transition-colors"
+                          title="Modifier"
+                        >
+                          <Edit2 className="w-5 h-5" />
+                        </button>
                         <button
                           onClick={() => loadInvoiceWithDetails(invoice)}
                           className="p-1 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded-full transition-colors"

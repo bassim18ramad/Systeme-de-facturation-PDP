@@ -2,12 +2,17 @@ import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { AuthForm } from "./components/AuthForm";
 import { EmployerDashboard } from "./components/EmployerDashboard";
 import { EmployeeDashboard } from "./components/EmployeeDashboard";
+import { ResetPassword } from "./components/ResetPassword";
 import { VerifyEmail } from "./components/VerifyEmail";
 
 function AppContent() {
   // Check for email verification route
   if (window.location.pathname === "/verify-email") {
     return <VerifyEmail />;
+  }
+  
+  if (window.location.pathname === "/reset-password") {
+    return <ResetPassword />;
   }
 
   const { user, profile, loading } = useAuth();
@@ -23,8 +28,28 @@ function AppContent() {
     );
   }
 
-  if (!user || !profile) {
+  if (!user) {
     return <AuthForm />;
+  }
+
+  // If user is logged in but profile is missing (and not loading), it might be a sync issue or first load
+  // Show a temporary state instead of AuthForm
+  if (!profile) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mx-auto mb-4"></div>
+          <h2 className="text-xl font-semibold text-gray-900">Finalisation de votre compte...</h2>
+          <p className="text-gray-600 mt-2">Nous préparons votre espace.</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="mt-6 text-blue-600 hover:underline text-sm"
+          >
+            Si cela prend trop de temps, cliquez ici
+          </button>
+        </div>
+      </div>
+    );
   }
 
   // Check if Employee is assigned to a company, otherwise "pending assignment"

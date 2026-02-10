@@ -16,6 +16,7 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
+  Edit2,
 } from "lucide-react";
 import { DeliveryOrderViewer } from "./DeliveryOrderViewer";
 import { downloadDocument } from "../utils/pdfGenerator";
@@ -48,6 +49,11 @@ export function DeliveryOrdersList({
   const { profile } = useAuth();
   const [orders, setOrders] = useState<OrderWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({
+    delivery_date: "",
+    status: "pending",
+  });
   const [selectedOrder, setSelectedOrder] = useState<OrderWithDetails | null>(
     null,
   );
@@ -153,7 +159,50 @@ export function DeliveryOrdersList({
     if (!confirm("Confirmer la conversion de cette commande en facture ?"))
       return;
 
-    const invoiceNumber = `FACT-${Date.now()}`;
+    // Fetch Company Name for ID generation
+    const { data: companyData } = await supabase
+      .from("companies")
+      .select("name")
+      .eq("id", order.company_id)
+      .single();
+
+    const companyName = companyData?.name
+      ? companyData.name
+          .trim()
+          .split(/\s+/)
+          .map((word: string) => word[0])
+          .join("")
+          .toUpperCase()
+      : "ENT";
+
+    const currentYear = new Date().getFullYear();
+    const prefix = `${companyName}_FACT-${currentYear}`;
+
+    // Find last invoice to increment sequence
+    const { data: lastInvoice } = await supabase
+      .from("invoices")
+      .select("invoice_number")
+      .eq("company_id", order.company_id)
+      .ilike("invoice_number", `${prefix}%`)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    let sequence = 1;
+    if (lastInvoice && lastInvoice.invoice_number) {
+      const parts = lastInvoice.invoice_number.split("-");
+      const lastSeqPart = parts[parts.length - 1]; // e.g., 202600001
+      if (lastSeqPart.length >= 5) {
+          const seqStr = lastSeqPart.slice(-5);
+          const seqNum = parseInt(seqStr);
+          if (!isNaN(seqNum)) {
+            sequence = seqNum + 1;
+          }
+      }
+    }
+
+    const invoiceNumber = `${prefix}${sequence.toString().padStart(5, "0")}`;
+
     const { error } = await supabase.from("invoices").insert({
       invoice_number: invoiceNumber,
       delivery_order_id: order.id,
@@ -179,6 +228,37 @@ export function DeliveryOrdersList({
       loadOrders();
       onUpdate();
     }
+  }
+
+  async function handleUpdateOrder(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingId) return;
+
+    const { error } = await supabase
+      .from("delivery_orders")
+      .update({
+        delivery_date: editForm.delivery_date || null,
+        status: editForm.status,
+      })
+      .eq("id", editingId);
+
+    if (error) {
+      alert("Erreur lors de la mise à jour");
+    } else {
+      setEditingId(null);
+      loadOrders();
+      onUpdate();
+    }
+  }
+
+  function startEdit(order: OrderWithDetails) {
+    setEditingId(order.id);
+    setEditForm({
+      delivery_date: order.delivery_date
+        ? order.delivery_date.split("T")[0]
+        : "",
+      status: order.status as string,
+    });
   }
 
   async function handleDownload(
@@ -290,6 +370,61 @@ export function DeliveryOrdersList({
 
   return (
     <>
+      {editingId && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full animate-slide-up">
+            <h3 className="text-lg font-bold mb-4">
+              Modifier le Bon de Livraison
+            </h3>
+            <form onSubmit={handleUpdateOrder} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Date de livraison
+                </label>
+                <input
+                  type="date"
+                  value={editForm.delivery_date}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, delivery_date: e.target.value })
+                  }
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Statut
+                </label>
+                <select
+                  value={editForm.status}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, status: e.target.value })
+                  }
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                >
+                  <option value="pending">En attente</option>
+                  <option value="delivered">Livré</option>
+                  <option value="cancelled">Annulé</option>
+                </select>
+              </div>
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  type="button"
+                  onClick={() => setEditingId(null)}
+                  className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded"
+                >
+                  Enregistrer
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden animate-fade-in">
         <div className="p-4 border-b border-gray-200 bg-gray-50 flex items-center gap-4">
           <div className="relative flex-1 max-w-md">
@@ -363,6 +498,13 @@ export function DeliveryOrdersList({
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex justify-end items-center gap-2">
+                        <button
+                          onClick={() => startEdit(order)}
+                          className="p-1 text-indigo-600 hover:text-indigo-900 hover:bg-indigo-50 rounded-full transition-colors"
+                          title="Modifier"
+                        >
+                          <Edit2 className="w-5 h-5" />
+                        </button>
                         <button
                           onClick={() => loadOrderWithDetails(order)}
                           className="p-1 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded-full transition-colors"

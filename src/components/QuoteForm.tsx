@@ -7,6 +7,7 @@ type QuoteFormProps = {
   companyId: string;
   onClose: () => void;
   onSuccess: () => void;
+  initialData?: any; // Using any to avoid complex type import but ideally Quote & { items: QuoteItem[] }
 };
 
 type QuoteItem = {
@@ -15,24 +16,35 @@ type QuoteItem = {
   unit_price: number | "";
 };
 
-export function QuoteForm({ companyId, onClose, onSuccess }: QuoteFormProps) {
+export function QuoteForm({
+  companyId,
+  onClose,
+  onSuccess,
+  initialData,
+}: QuoteFormProps) {
   const { profile } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const [formData, setFormData] = useState({
-    client_name: "",
-    client_email: "",
-    client_phone: "",
-    client_address: "",
-    notes: "",
-    include_tva: false,
-    stamp_duty: 0,
+    client_name: initialData?.client_name || "",
+    client_email: initialData?.client_email || "",
+    client_phone: initialData?.client_phone || "",
+    client_address: initialData?.client_address || "",
+    notes: initialData?.notes || "",
+    include_tva: initialData?.include_tva || false,
+    stamp_duty: initialData?.stamp_duty || 0,
   });
 
-  const [items, setItems] = useState<QuoteItem[]>([
-    { description: "", quantity: 1, unit_price: 0 },
-  ]);
+  const [items, setItems] = useState<QuoteItem[]>(
+    initialData?.items
+      ? initialData.items.map((i: any) => ({
+          description: i.description,
+          quantity: i.quantity,
+          unit_price: i.unit_price,
+        }))
+      : [{ description: "", quantity: 1, unit_price: 0 }],
+  );
 
   function addItem() {
     setItems([...items, { description: "", quantity: 1, unit_price: 0 }]);
@@ -78,35 +90,111 @@ export function QuoteForm({ companyId, onClose, onSuccess }: QuoteFormProps) {
     setLoading(true);
 
     try {
-      const quoteNumber = `DEV-${Date.now()}`;
+      if (!companyId) throw new Error("ID de l'entreprise manquant");
+      if (!profile?.id) throw new Error("Profil utilisateur manquant");
+
       const totalAmount = calculateTotal();
 
-      const { data: quoteData, error: quoteError } = await supabase
-        .from("quotes")
-        .insert({
-          quote_number: quoteNumber,
-          company_id: companyId,
-          client_name: formData.client_name,
-          client_email: formData.client_email,
-          client_phone: formData.client_phone || null,
-          client_address: formData.client_address || null,
-          notes: formData.notes || null,
-          include_tva: formData.include_tva,
-          stamp_duty: Number(formData.stamp_duty) || 0,
-          total_amount: totalAmount,
-          status: "draft",
-          created_by: profile?.id,
-        })
-        .select()
-        .single();
+      let quoteId = initialData?.id;
 
-      if (quoteError) throw quoteError;
+      if (initialData) {
+        // Update Logic
+        const { error: quoteError } = await supabase
+          .from("quotes")
+          .update({
+            client_name: formData.client_name,
+            client_email: formData.client_email,
+            client_phone: formData.client_phone || null,
+            client_address: formData.client_address || null,
+            notes: formData.notes || null,
+            include_tva: formData.include_tva,
+            stamp_duty: Number(formData.stamp_duty) || 0,
+            total_amount: totalAmount,
+          })
+          .eq("id", initialData.id);
+        if (quoteError) throw quoteError;
 
+        // Clear Items
+        await supabase
+          .from("quote_items")
+          .delete()
+          .eq("quote_id", initialData.id);
+      } else {
+        // Create Logic
+        // Fetch Company Name for ID generation
+        const { data: companyData } = await supabase
+          .from("companies")
+          .select("name")
+          .eq("id", companyId)
+          .single();
+
+        const companyName = companyData?.name
+          ? companyData.name
+              .trim()
+              .split(/\s+/) // Handle multiple spaces
+              .map((word: string) => word[0])
+              .join("")
+              .toUpperCase()
+          : "ENT";
+        
+        const currentYear = new Date().getFullYear();
+        const prefix = `${companyName}_DEV-${currentYear}`;
+
+        // Find last quote to increment sequence
+        const { data: lastQuote } = await supabase
+          .from("quotes")
+          .select("quote_number")
+          .eq("company_id", companyId)
+          .ilike("quote_number", `${prefix}%`)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        let sequence = 1;
+        if (lastQuote && lastQuote.quote_number) {
+          const parts = lastQuote.quote_number.split("-");
+          const lastSeqPart = parts[parts.length - 1]; // e.g., 202600001
+          // Extract the sequence part (last 5 digits)
+          // format is YEAR + 00001 (9 chars total usually if year is 4 digits)
+          if (lastSeqPart.length >= 5) {
+             const seqStr = lastSeqPart.slice(-5);
+             const seqNum = parseInt(seqStr);
+             if (!isNaN(seqNum)) {
+               sequence = seqNum + 1;
+             }
+          }
+        }
+
+        const quoteNumber = `${prefix}${sequence.toString().padStart(5, "0")}`;
+
+        const { data: quoteData, error: quoteError } = await supabase
+          .from("quotes")
+          .insert({
+            quote_number: quoteNumber,
+            company_id: companyId,
+            client_name: formData.client_name,
+            client_email: formData.client_email,
+            client_phone: formData.client_phone || null,
+            client_address: formData.client_address || null,
+            notes: formData.notes || null,
+            include_tva: formData.include_tva,
+            stamp_duty: Number(formData.stamp_duty) || 0,
+            total_amount: totalAmount,
+            status: "draft",
+            created_by: profile?.id,
+          })
+          .select()
+          .single();
+        if (quoteError) throw quoteError;
+        quoteId = quoteData.id;
+      }
+
+      // Insert Items
       const itemsToInsert = items.map((item) => {
         const qty = Number(item.quantity) || 0;
         const price = Number(item.unit_price) || 0;
         return {
-          quote_id: quoteData.id,
+          quote_id: quoteId, // Use variable
           description: item.description,
           quantity: qty,
           unit_price: price,
@@ -122,7 +210,11 @@ export function QuoteForm({ companyId, onClose, onSuccess }: QuoteFormProps) {
 
       onSuccess();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Une erreur est survenue");
+      console.error(err);
+      const message =
+        err instanceof Error ? err.message : "Une erreur est survenue";
+      setError(message);
+      alert(`Erreur: ${message}`);
     } finally {
       setLoading(false);
     }

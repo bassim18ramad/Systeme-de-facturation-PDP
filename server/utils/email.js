@@ -54,8 +54,14 @@ const sendVerificationEmail = async (email, token) => {
     // Setup email data
     const verifyLink = `${process.env.FRONTEND_URL || "http://localhost:5173"}/verify-email?token=${token}`;
 
+    // Use the configured sender from env, or fallback to the SMTP user, or a default
+    const sender =
+      process.env.SMTP_FROM ||
+      process.env.SMTP_USER ||
+      '"Support" <support@example.com>';
+
     const info = await transporter.sendMail({
-      from: '"Support" <support@example.com>', // sender address
+      from: sender, // sender address
       to: email, // list of receivers
       subject: "Verify your email address", // Subject line
       text: `Please click the link to verify your email: ${verifyLink}`, // plain text body
@@ -79,6 +85,43 @@ const sendVerificationEmail = async (email, token) => {
   }
 };
 
+const sendRecoveryEmail = async (email, token) => {
+  try {
+    const transporter = await createTransporter();
+
+    // Setup email data
+    const recoveryLink = `${process.env.FRONTEND_URL || "http://localhost:5173"}/reset-password?token=${token}`;
+
+    const sender =
+      process.env.SMTP_FROM ||
+      process.env.SMTP_USER ||
+      '"Support" <support@example.com>';
+
+    const info = await transporter.sendMail({
+      from: sender,
+      to: email,
+      subject: "Réinitialisation de votre mot de passe",
+      text: `Cliquez ici pour réinitialiser votre mot de passe : ${recoveryLink}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; padding: 20px;">
+          <h2>Réinitialisation du mot de passe</h2>
+          <p>Vous avez demandé à réinitialiser votre mot de passe.</p>
+          <p>Cliquez sur le lien ci-dessous pour choisir un nouveau mot de passe :</p>
+          <a href="${recoveryLink}" style="display: inline-block; padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px;">Réinitialiser le mot de passe</a>
+          <p>Si vous n'êtes pas à l'origine de cette demande, vous pouvez ignorer cet email.</p>
+        </div>
+      `,
+    });
+
+    console.log("Recovery email sent: %s", info.messageId);
+    return info;
+  } catch (error) {
+    console.error("Error sending recovery email:", error);
+    throw error;
+  }
+};
+
 module.exports = {
   sendVerificationEmail,
+  sendRecoveryEmail,
 };

@@ -10,6 +10,7 @@ export function EmployeeDashboard() {
   const { signOut, profile } = useAuth();
   const [company, setCompany] = useState<Company | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [editData, setEditData] = useState<any>(null); // State for editing
   const [selectedQuote, setSelectedQuote] = useState<any | null>(null);
   const [quotesRefreshToken, setQuotesRefreshToken] = useState(0);
 
@@ -86,7 +87,10 @@ export function EmployeeDashboard() {
             <div className="flex justify-between items-center mb-6 animate-slide-up">
               <h2 className="text-2xl font-bold text-gray-900">Mes Devis</h2>
               <button
-                onClick={() => setShowForm(true)}
+                onClick={() => {
+                  setEditData(null);
+                  setShowForm(true);
+                }}
                 className="inline-flex items-center space-x-2 px-6 py-3 bg-blue-600 text-white rounded-xl shadow-sm hover:bg-blue-700 hover:shadow-md transition-all duration-200 transform hover:-translate-y-0.5"
               >
                 <Plus className="w-5 h-5" />
@@ -99,21 +103,31 @@ export function EmployeeDashboard() {
               onUpdate={() => {}}
               refreshToken={quotesRefreshToken}
               onViewQuote={setSelectedQuote}
+              onEditQuote={(quote) => {
+                setEditData(quote);
+                setShowForm(true);
+              }}
             />
           </>
         )}
       </main>
 
-      {/* QuoteForm was here */}
-      {showForm && company && (
-        <QuoteForm
-          companyId={company.id}
-          onClose={() => setShowForm(false)}
-          onSuccess={() => {
-            setShowForm(false);
-            setQuotesRefreshToken((token) => token + 1);
-          }}
-        />
+{showForm && company && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
+          <QuoteForm
+            companyId={company.id}
+            initialData={editData}
+            onClose={() => {
+              setShowForm(false);
+              setEditData(null);
+            }}
+            onSuccess={() => {
+              setShowForm(false);
+              setEditData(null);
+              setQuotesRefreshToken((token) => token + 1);
+            }}
+          />
+        </div>
       )}
 
       {selectedQuote && (

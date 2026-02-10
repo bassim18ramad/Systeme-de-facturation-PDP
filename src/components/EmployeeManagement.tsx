@@ -1,6 +1,14 @@
 import { useState, useEffect } from "react";
 import { supabase, UserProfile } from "../lib/supabase";
-import { Users, Plus, X, Trash2, CheckCircle, Clock } from "lucide-react";
+import {
+  Users,
+  Plus,
+  X,
+  Trash2,
+  CheckCircle,
+  Clock,
+  Edit2,
+} from "lucide-react";
 
 type EmployeeManagementProps = {
   companyId: string;
@@ -10,6 +18,7 @@ export function EmployeeManagement({ companyId }: EmployeeManagementProps) {
   const [employees, setEmployees] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -49,88 +58,143 @@ export function EmployeeManagement({ companyId }: EmployeeManagementProps) {
     }
   }
 
-  async function handleCreateEmployee(e: React.FormEvent) {
+  async function handleCreateOrUpdateEmployee(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     setLoading(true);
 
     try {
-      // Logic:
-      // 1. Try to find if user exists with this email (unlinked or pending)
-      // 2. If exists -> Link to this company and set active
-      // 3. If not -> Create new user via signUp
-
-      // Since we can't easily "search" users via client due to RLS/policies usually,
-      // we can try a specific upsert or specific function if we had one.
-      // But given we are using a mock/local setup or standard Supabase:
-
-      // Attempt to update first (Adopting an existing user)
-      const { data: existingUser } = await supabase
-        .from("user_profiles")
-        .select("*")
-        .eq("email", formData.email)
-        .eq("role", "employee")
-        .maybeSingle();
-
-      if (existingUser) {
-        // User exists!
-        // Fix: Check if company_id is present AND points to a VALID company that is NOT the current one.
-        // If company_id is present but the company doesn't exist (deleted), we should allow reclaiming him.
-        // But for standard logic:
-        if (existingUser.company_id && existingUser.company_id !== companyId) {
-          throw new Error(
-            "Cet employé appartient déjà à une autre entreprise.",
-          );
-        }
-
-        // Link them
+      if (editingId) {
+        // Update existing employee
         const { error: updateError } = await supabase
           .from("user_profiles")
           .update({
-            company_id: companyId,
-            status: "active",
-            // Do not overwrite name if it exists, use theirs
-            full_name: existingUser.full_name || formData.full_name,
+            full_name: formData.full_name,
+            // Email updates via auth API are complex and might require re-verification.
+            // For now, we only update user_profiles metadata.
+            // Password update is not supported here for security, they should use forgot password.
           })
-          .eq("id", existingUser.id);
+          .eq("id", editingId);
 
         if (updateError) throw updateError;
+        alert("Employé mis à jour avec succès !");
+        setEditingId(null);
+      } else {
+        // Create Logic: (existing create logic)
+        // 1. Try to find if user exists with this email (unlinked or pending)
+        // 2. If exists -> Link to this company and set active
+        // 3. If not -> Create new user via signUp
 
-        alert(
-          existingUser.company_id
-            ? "Employé réactivé/mis à jour avec succès !"
-            : "Compte employé existant trouvé et rattaché à votre entreprise avec succès !",
-        );
+        // Attempt to update first (Adopting an existing user)
+        const { data: existingUser } = await supabase
+          .from("user_profiles")
+          .select("*")
+          .eq("email", formData.email)
+          .eq("role", "employee")
+          .maybeSingle();
 
-        setFormData({ email: "", password: "", full_name: "" });
-        setShowForm(false);
-        loadEmployees();
-        setLoading(false);
-        return;
+        if (existingUser) {
+          if (
+            existingUser.company_id &&
+            existingUser.company_id !== companyId
+          ) {
+            throw new Error(
+              "Cet employé appartient déjà à une autre entreprise.",
+            );
+          }
+
+          const { error: updateError } = await supabase
+            .from("user_profiles")
+            .update({
+              company_id: companyId,
+              status: "active",
+              full_name: existingUser.full_name || formData.full_name,
+            })
+            .eq("id", existingUser.id);
+
+          if (updateError) throw updateError;
+
+          alert(
+            existingUser.company_id
+              ? "Employé réactivé/mis à jour avec succès !"
+              : "Compte employé existant trouvé et rattaché à votre entreprise avec succès !",
+          );
+        } else {
+          // New User Creation
+          if (!formData.password) {
+            throw new Error(
+              "Aucun compte employé trouvé avec cet email. Veuillez entrer un mot de passe pour créer le compte.",
+            );
+          }
+
+          const { data: sessionData } = await supabase.auth.getSession();
+          const token = sessionData.session?.access_token;
+
+          if (!token) {
+            throw new Error("Vous devez être connecté pour créer un employé.");
+          }
+
+          const API_URL = (
+            import.meta.env.VITE_API_URL ||
+            import.meta.env.VITE_SUPABASE_URL ||
+            "http://localhost:3000"
+          ).replace(/\/$/, "");
+
+          const res = await fetch(`${API_URL}/auth/v1/admin/create-user`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              email: formData.email,
+              password: formData.password,
+              full_name: formData.full_name,
+              role: "employee",
+              company_id: companyId,
+            }),
+          });
+
+          let errorMsg = "Erreur lors de la création du compte.";
+          try {
+            const data = await res.json();
+            if (!res.ok) {
+              errorMsg = data.error || errorMsg;
+              throw new Error(errorMsg);
+            }
+          } catch (e) {
+            if (e instanceof SyntaxError) {
+              console.error("Non-JSON response received:", e);
+              throw new Error(
+                "Erreur serveur (réponse invalide). Vérifiez que le serveur backend est bien lancé sur le port 3000.",
+              );
+            }
+            throw e;
+          }
+
+          alert("Compte employé créé et affecté avec succès !");
+        }
       }
 
-      // If user not found in user_profiles, it might be they haven't signed up yet.
-      // We can fallback to creating them ONLY if we are in an admin context or standard Supabase flow allows it.
-      // But adhering to the user request: "Employe peut s'inscrire... attendre permission".
-      // This implies the employer should only be able to add ALREADY signed up users.
-
-      // However, to be nice, we can keep the 'Create' logic as a fallback (invitation style)
-      // OR restrict it. Given the prompt "employe s'inscrit", the lookup above is the MAIN workflow.
-      // If we don't find them:
-
-      throw new Error(
-        "Aucun compte employé trouvé avec cet email. Demandez à votre employé de s'inscrire d'abord.",
-      );
-
-      /* Legacy Create Logic (Disabled to enforce workflow)
-      const { data: sessionData } = await supabase.auth.getSession();
-      ...
-      */
+      setFormData({ email: "", password: "", full_name: "" });
+      setShowForm(false);
+      setEditingId(null);
+      loadEmployees();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Une erreur est survenue");
     } finally {
       setLoading(false);
     }
+  }
+
+  function startEdit(employee: UserProfile) {
+    setEditingId(employee.id);
+    setFormData({
+      email: employee.email,
+      full_name: employee.full_name,
+      password: "", // Password update not supported in this simplistic edit view
+    });
+    setShowForm(true);
   }
 
   async function deleteEmployee(id: string) {
@@ -172,9 +236,21 @@ export function EmployeeManagement({ companyId }: EmployeeManagementProps) {
 
       {showForm && (
         <div className="bg-gray-50 rounded-lg p-6 mb-6 animate-slide-up">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            Nouvel employé
-          </h3>
+          <div className="flex justify-between items-start mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">
+              {editingId ? "Modifier l'employé" : "Nouvel employé"}
+            </h3>
+            <button
+              onClick={() => {
+                setShowForm(false);
+                setEditingId(null);
+                setFormData({ email: "", password: "", full_name: "" });
+              }}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              ✕
+            </button>
+          </div>
 
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4 animate-slide-up">
@@ -182,22 +258,24 @@ export function EmployeeManagement({ companyId }: EmployeeManagementProps) {
             </div>
           )}
 
-          <div className="bg-blue-50 border-l-4 border-blue-400 p-4 mb-4 animate-fade-in">
-            <div className="flex">
-              <div className="ml-3">
-                <p className="text-sm text-blue-700">
-                  Saisissez l'email de l'employé. S'il a déjà pré-créé son
-                  compte, il sera automatiquement ajouté à votre entreprise.
-                  Sinon, remplissez le mot de passe pour créer son compte.
-                </p>
+          {!editingId && (
+            <div className="bg-blue-50 border-l-4 border-blue-400 p-4 mb-4 animate-fade-in">
+              <div className="flex">
+                <div className="ml-3">
+                  <p className="text-sm text-blue-700">
+                    Saisissez l'email de l'employé. S'il a déjà pré-créé son
+                    compte, il sera automatiquement ajouté à votre entreprise.
+                    Sinon, remplissez le mot de passe pour créer son compte.
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
-          <form onSubmit={handleCreateEmployee} className="space-y-4">
+          <form onSubmit={handleCreateOrUpdateEmployee} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Nom complet (Optionnel)
+                Nom complet {editingId ? "*" : "(Optionnel)"}
               </label>
               <input
                 type="text"
@@ -206,6 +284,7 @@ export function EmployeeManagement({ companyId }: EmployeeManagementProps) {
                   setFormData({ ...formData, full_name: e.target.value })
                 }
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                required={!!editingId}
               />
             </div>
 
@@ -220,31 +299,43 @@ export function EmployeeManagement({ companyId }: EmployeeManagementProps) {
                 onChange={(e) =>
                   setFormData({ ...formData, email: e.target.value })
                 }
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                disabled={!!editingId}
+                title={editingId ? "L'email ne peut pas être modifié" : "Email"}
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Mot de passe (Laissé vide pour recherche existante)
-              </label>
-              <input
-                type="password"
-                disabled
-                placeholder="Géré par l'employé"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                L'employé définit son mot de passe lors de son inscription.
-              </p>
-            </div>
+            {!editingId && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Mot de passe (Requis pour création de compte)
+                </label>
+                <input
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) =>
+                    setFormData({ ...formData, password: e.target.value })
+                  }
+                  placeholder="Mot de passe pour le nouvel employé"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Laissez vide si l'employé a déjà un compte. Remplissez pour
+                  créer un nouveau compte.
+                </p>
+              </div>
+            )}
 
             <button
               type="submit"
               disabled={loading}
               className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 hover:shadow-md transition-all duration-200 disabled:opacity-50 transform hover:-translate-y-0.5"
             >
-              {loading ? "Recherche..." : "Ajouter l'employé"}
+              {loading
+                ? "Traitement..."
+                : editingId
+                  ? "Mettre à jour"
+                  : "Ajouter l'employé"}
             </button>
           </form>
         </div>
@@ -317,6 +408,13 @@ export function EmployeeManagement({ companyId }: EmployeeManagementProps) {
                           <CheckCircle className="w-5 h-5" />
                         </button>
                       )}
+                      <button
+                        onClick={() => startEdit(employee)}
+                        className="p-1 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded-full transition-colors"
+                        title="Modifier l'employé"
+                      >
+                        <Edit2 className="w-5 h-5" />
+                      </button>
                       <button
                         onClick={() => deleteEmployee(employee.id)}
                         className="p-1 text-red-600 hover:text-red-900 hover:bg-red-50 rounded-full transition-colors"

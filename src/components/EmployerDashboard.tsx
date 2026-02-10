@@ -20,6 +20,8 @@ import { QuoteViewer } from "./QuoteViewer";
 import { DeliveryOrderViewer } from "./DeliveryOrderViewer";
 import { InvoiceViewer } from "./InvoiceViewer";
 
+import { QuoteForm } from "./QuoteForm";
+
 type TabType = "quotes" | "orders" | "invoices" | "employees" | "settings";
 
 export function EmployerDashboard() {
@@ -28,6 +30,7 @@ export function EmployerDashboard() {
 
   // Modal states
   const [viewQuote, setViewQuote] = useState<QuoteWithItems | null>(null);
+  const [editQuote, setEditQuote] = useState<QuoteWithItems | null>(null); // To trigger edit
   const [viewOrder, setViewOrder] = useState<OrderWithDetails | null>(null);
   const [viewInvoice, setViewInvoice] = useState<InvoiceWithDetails | null>(
     null,
@@ -351,6 +354,7 @@ export function EmployerDashboard() {
                     companyId={selectedCompany.id}
                     onUpdate={loadStats}
                     onViewQuote={setViewQuote}
+                    onEditQuote={setEditQuote}
                   />
                 )}
                 {activeTab === "orders" && (
@@ -394,6 +398,29 @@ export function EmployerDashboard() {
       </main>
 
       {/* Modals rendered at root level */}
+      {editQuote && selectedCompany && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <QuoteForm
+              companyId={selectedCompany.id}
+              initialData={editQuote}
+              onClose={() => setEditQuote(null)}
+              onSuccess={() => {
+                setEditQuote(null);
+                loadStats();
+                // We might need to refresh quote list, usually loadStats does not trigger list refresh inside component
+                // Ideally, pass a toggle or a callback that QuotesList listens to. 
+                // But since QuotesList accepts 'onUpdate', let's stick to simple
+                // window reload or depend on React key change if needed.
+                // For now, loadStats updates stats, but list might be stale.
+                // Triggering a re-render of QuotesList via key/refresh prop would be better.
+                // We will rely on user refresh or optimistic update if complex.
+                // Actually, QuoteList has 'refreshToken' prop? No, I just added it to EmployeeDashboard.
+                // Simple hack: toggle tab or reload.
+                window.location.reload(); 
+              }}
+            />
+        </div>
+      )}
       {viewQuote && (
         <QuoteViewer quote={viewQuote} onClose={() => setViewQuote(null)} />
       )}

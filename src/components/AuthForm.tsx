@@ -7,11 +7,45 @@ export function AuthForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
-  const [role, setRole] = useState<"employee" | "employer">("employer");
+  const [role, setRole] = useState<"employee" | "employer">("employee");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const { signIn, signUp, profileError } = useAuth();
+
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
+
+  async function handleForgotPassword() {
+    if (!email) {
+      setError("Veuillez entrer votre email d'abord.");
+      return;
+    }
+    setForgotLoading(true);
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/auth/v1/recover`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        },
+      );
+      if (response.ok) {
+        setSuccessMessage(
+          "Email de réinitialisation envoyé ! Vérifiez votre boîte de réception.",
+        );
+        setShowForgotPassword(false);
+        setError(""); // Clear any previous errors
+      } else {
+        throw new Error("Erreur lors de l'envoi.");
+      }
+    } catch (err) {
+      setError("Impossible d'envoyer l'email.");
+    } finally {
+      setForgotLoading(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -23,19 +57,23 @@ export function AuthForm() {
       if (isLogin) {
         const { error } = await signIn(email, password);
         if (error) {
-          if (error.message.includes("Invalid login credentials")) {
-            throw new Error(
-              "Email incorrect, mot de passe erroné, ou email non validé.",
-            );
-          }
-          if (error.message.includes("Email not confirmed")) {
-            throw new Error(
-              "Veuillez confirmer votre email avant de vous connecter",
-            );
+          if (
+            error.message.includes("Invalid login credentials") ||
+            error.message.includes("Invalid credentials")
+          ) {
+            setShowForgotPassword(true); // <--- Show Link
+            throw new Error("Email incorrect ou mot de passe erroné.");
           }
           throw error;
         }
       } else {
+        if (password.length < 8) {
+          throw new Error("Le mot de passe doit contenir au moins 8 caractères.");
+        }
+        if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+          throw new Error("Le mot de passe doit contenir des lettres et des chiffres.");
+        }
+
         const { data, error } = await signUp(
           email,
           password,
@@ -52,16 +90,9 @@ export function AuthForm() {
 
         // Si l'inscription réussit mais pas de session (email confirm nécessaire)
         if (data?.user && !data.session) {
-          if ((data as any).dev_token) {
-            const token = (data as any).dev_token;
-            setSuccessMessage(
-              `Inscription réussie !<br/><br/><strong>MODE DEV:</strong> <a href="/verify-email?token=${token}" onClick="window.location.href='/verify-email?token=${token}'; return false;" class="underline font-bold text-green-800">CLIQUEZ ICI POUR VALIDER VOTRE EMAIL</a>`,
-            );
-          } else {
-            setSuccessMessage(
-              "Inscription réussie ! Veuillez consulter vos emails pour le lien de validation.",
-            );
-          }
+          setSuccessMessage(
+            "Inscription réussie ! Veuillez consulter vos emails pour le lien de validation.",
+          );
           setIsLogin(true);
           setEmail("");
           setPassword("");
@@ -158,38 +189,6 @@ export function AuthForm() {
             </div>
           )}
 
-          {!isLogin && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Type de compte
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setRole("employer")}
-                  className={`px-4 py-2 rounded-lg border text-sm font-medium transition-all duration-200 ${
-                    role === "employer"
-                      ? "bg-blue-600 text-white border-blue-600 shadow-md transform scale-105"
-                      : "bg-white text-gray-700 border-gray-300 hover:border-blue-400 hover:bg-gray-50"
-                  }`}
-                >
-                  Employeur
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRole("employee")}
-                  className={`px-4 py-2 rounded-lg border text-sm font-medium transition-all duration-200 ${
-                    role === "employee"
-                      ? "bg-blue-600 text-white border-blue-600 shadow-md transform scale-105"
-                      : "bg-white text-gray-700 border-gray-300 hover:border-blue-400 hover:bg-gray-50"
-                  }`}
-                >
-                  Employé
-                </button>
-              </div>
-            </div>
-          )}
-
           <div className="group">
             <label
               htmlFor="email"
@@ -209,12 +208,24 @@ export function AuthForm() {
           </div>
 
           <div className="group">
-            <label
-              htmlFor="password"
-              className="block text-sm font-medium text-gray-700 mb-1 group-focus-within:text-blue-600 transition-colors"
-            >
-              Mot de passe
-            </label>
+            <div className="flex items-center justify-between">
+              <label
+                htmlFor="password"
+                className="block text-sm font-medium text-gray-700 mb-1 group-focus-within:text-blue-600 transition-colors"
+              >
+                Mot de passe
+              </label>
+              {showForgotPassword && isLogin && (
+                <button
+                  type="button"
+                  onClick={handleForgotPassword}
+                  disabled={forgotLoading}
+                  className="text-xs text-blue-600 hover:text-blue-800 hover:underline mb-1"
+                >
+                  {forgotLoading ? "Envoi..." : "Mot de passe oublié ?"}
+                </button>
+              )}
+            </div>
             <input
               id="password"
               type="password"
