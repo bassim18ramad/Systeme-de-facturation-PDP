@@ -175,6 +175,43 @@ class QueryBuilder {
     return this;
   }
 
+  ilike(column, pattern) {
+    this.queryParams[column] = `ilike.${pattern}`;
+    return this;
+  }
+
+  limit(count) {
+    this.options.limit = count;
+    // For GET querystring if needed or post-processing
+    this.queryParams["limit"] = count;
+    return this;
+  }
+
+  gt(column, value) {
+    this.queryParams[column] = `gt.${value}`;
+    return this;
+  }
+
+  lt(column, value) {
+    this.queryParams[column] = `lt.${value}`;
+    return this;
+  }
+
+  gte(column, value) {
+    this.queryParams[column] = `gte.${value}`;
+    return this;
+  }
+
+  lte(column, value) {
+    this.queryParams[column] = `lte.${value}`;
+    return this;
+  }
+
+  or(query) {
+    this.queryParams["or"] = `(${query})`;
+    return this;
+  }
+
   order(column, { ascending = true } = {}) {
     this.queryParams.order = `${column}.${ascending ? "asc" : "desc"}`;
     return this;
@@ -203,11 +240,22 @@ class QueryBuilder {
       });
 
       if (!res.ok) {
-        const err = await res.json();
+        const text = await res.text();
+        let err;
+        try {
+          err = JSON.parse(text);
+        } catch {
+          err = { error: text || res.statusText };
+        }
         return { data: null, error: { message: err.error || res.statusText } };
       }
 
-      const data = await res.json();
+      if (res.status === 204) {
+        return { data: null, error: null };
+      }
+
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : null;
 
       let count = null;
       if (this.options && this.options.count) {

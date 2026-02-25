@@ -14,6 +14,8 @@ type QuoteItem = {
   description: string;
   quantity: number | "";
   unit_price: number | "";
+  width?: number | "";
+  length?: number | "";
 };
 
 export function QuoteForm({
@@ -27,11 +29,13 @@ export function QuoteForm({
   const [error, setError] = useState("");
 
   const [formData, setFormData] = useState({
-    client_name: initialData?.client_name || "",
+    client_name: initialData?.client_name || "Client Divers",
     client_email: initialData?.client_email || "",
     client_phone: initialData?.client_phone || "",
     client_address: initialData?.client_address || "",
-    notes: initialData?.notes || "",
+    notes:
+      initialData?.notes ||
+      "Nous vous remercions pour la confiance que vous nous accordez et restons à votre entière disposition pour toute information complémentaire.",
     include_tva: initialData?.include_tva || false,
     stamp_duty: initialData?.stamp_duty || 0,
   });
@@ -42,12 +46,31 @@ export function QuoteForm({
           description: i.description,
           quantity: i.quantity,
           unit_price: i.unit_price,
+          width: i.width,
+          length: i.length,
         }))
-      : [{ description: "", quantity: 1, unit_price: 0 }],
+      : [
+          {
+            description: "",
+            quantity: 1,
+            unit_price: 0,
+            width: "",
+            length: "",
+          },
+        ],
   );
 
   function addItem() {
-    setItems([...items, { description: "", quantity: 1, unit_price: 0 }]);
+    setItems([
+      ...items,
+      {
+        description: "",
+        quantity: 1,
+        unit_price: 0,
+        width: "",
+        length: "",
+      },
+    ]);
   }
 
   function removeItem(index: number) {
@@ -65,11 +88,15 @@ export function QuoteForm({
   }
 
   function calculateSubtotal() {
-    return items.reduce(
-      (sum, item) =>
-        sum + (Number(item.quantity) || 0) * (Number(item.unit_price) || 0),
-      0,
-    );
+    return items.reduce((sum, item) => {
+      const qty = Number(item.quantity) || 0;
+      const price = Number(item.unit_price) || 0;
+      const width = item.width ? Number(item.width) : 0;
+      const length = item.length ? Number(item.length) : 0;
+      const sqMeters = width && length ? width * length : 1;
+
+      return sum + qty * price * sqMeters;
+    }, 0);
   }
 
   function calculateTotal() {
@@ -115,10 +142,12 @@ export function QuoteForm({
         if (quoteError) throw quoteError;
 
         // Clear Items
-        await supabase
+        const { error: deleteError } = await supabase
           .from("quote_items")
           .delete()
           .eq("quote_id", initialData.id);
+
+        if (deleteError) throw deleteError;
       } else {
         // Create Logic
         // Fetch Company Name for ID generation
@@ -136,16 +165,19 @@ export function QuoteForm({
               .join("")
               .toUpperCase()
           : "ENT";
-        
+
         const currentYear = new Date().getFullYear();
-        const prefix = `${companyName}_DEV-${currentYear}`;
+        const prefix = `${companyName}/DEV-${currentYear}`;
 
         // Find last quote to increment sequence
         const { data: lastQuote } = await supabase
           .from("quotes")
           .select("quote_number")
           .eq("company_id", companyId)
-          .ilike("quote_number", `${prefix}%`)
+          // Search for both formats to maintain sequence continuity
+          .or(
+            `quote_number.ilike.${companyName}_DEV-${currentYear}%,quote_number.ilike.${companyName}/DEV-${currentYear}%`,
+          )
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -157,11 +189,11 @@ export function QuoteForm({
           // Extract the sequence part (last 5 digits)
           // format is YEAR + 00001 (9 chars total usually if year is 4 digits)
           if (lastSeqPart.length >= 5) {
-             const seqStr = lastSeqPart.slice(-5);
-             const seqNum = parseInt(seqStr);
-             if (!isNaN(seqNum)) {
-               sequence = seqNum + 1;
-             }
+            const seqStr = lastSeqPart.slice(-5);
+            const seqNum = parseInt(seqStr);
+            if (!isNaN(seqNum)) {
+              sequence = seqNum + 1;
+            }
           }
         }
 
@@ -193,12 +225,19 @@ export function QuoteForm({
       const itemsToInsert = items.map((item) => {
         const qty = Number(item.quantity) || 0;
         const price = Number(item.unit_price) || 0;
+        const width = item.width ? Number(item.width) : null;
+        const length = item.length ? Number(item.length) : null;
+        const sqMeters = width && length ? width * length : null;
+        const multiplier = sqMeters ? sqMeters : 1;
+
         return {
           quote_id: quoteId, // Use variable
           description: item.description,
           quantity: qty,
           unit_price: price,
-          total_price: qty * price,
+          width: width,
+          length: length,
+          total_price: qty * price * multiplier,
         };
       });
 
@@ -224,7 +263,9 @@ export function QuoteForm({
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[100] animate-fade-in">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto animate-scale-in">
         <div className="sticky top-0 bg-white/90 backdrop-blur border-b border-gray-200 px-6 py-4 flex justify-between items-center">
-          <h2 className="text-2xl font-bold text-gray-900">Nouveau Devis</h2>
+          <h2 className="text-2xl font-bold text-gray-900">
+            {initialData ? "Modifier le Devis" : "Nouveau Devis"}
+          </h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full p-1 transition-colors"
@@ -253,16 +294,16 @@ export function QuoteForm({
                   setFormData({ ...formData, client_name: e.target.value })
                 }
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                placeholder="Client Divers"
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Email du client *
+                Email du client
               </label>
               <input
                 type="email"
-                required
                 value={formData.client_email}
                 onChange={(e) =>
                   setFormData({ ...formData, client_email: e.target.value })
@@ -334,7 +375,7 @@ export function QuoteForm({
                   className="flex gap-3 items-start bg-gray-50 p-4 rounded-lg"
                 >
                   <div className="flex-1 grid grid-cols-1 md:grid-cols-12 gap-3">
-                    <div className="md:col-span-5">
+                    <div className="md:col-span-4">
                       <input
                         type="text"
                         placeholder="Description"
@@ -344,6 +385,46 @@ export function QuoteForm({
                           updateItem(index, "description", e.target.value)
                         }
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div className="md:col-span-1">
+                      <input
+                        type="number"
+                        placeholder="Lrg (m)"
+                        min="0"
+                        step="0.01"
+                        value={item.width || ""}
+                        onChange={(e) =>
+                          updateItem(
+                            index,
+                            "width",
+                            e.target.value === ""
+                              ? ""
+                              : parseFloat(e.target.value),
+                          )
+                        }
+                        className="w-full px-2 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        title="Largeur"
+                      />
+                    </div>
+                    <div className="md:col-span-1">
+                      <input
+                        type="number"
+                        placeholder="Lng (m)"
+                        min="0"
+                        step="0.01"
+                        value={item.length || ""}
+                        onChange={(e) =>
+                          updateItem(
+                            index,
+                            "length",
+                            e.target.value === ""
+                              ? ""
+                              : parseFloat(e.target.value),
+                          )
+                        }
+                        className="w-full px-2 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        title="Longueur"
                       />
                     </div>
                     <div className="md:col-span-2">
@@ -366,7 +447,7 @@ export function QuoteForm({
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
-                    <div className="md:col-span-3">
+                    <div className="md:col-span-2">
                       <input
                         type="number"
                         placeholder="Prix unitaire"
@@ -390,7 +471,10 @@ export function QuoteForm({
                     <div className="md:col-span-2 flex items-center justify-end font-medium text-gray-700 px-3 py-2">
                       {(
                         (Number(item.quantity) || 0) *
-                        (Number(item.unit_price) || 0)
+                        (Number(item.unit_price) || 0) *
+                        (item.width && item.length
+                          ? Number(item.width) * Number(item.length)
+                          : 1)
                       ).toLocaleString()}{" "}
                       FDJ
                     </div>
@@ -453,7 +537,7 @@ export function QuoteForm({
 
             <div className="border-t border-gray-200 pt-4 space-y-2">
               <div className="flex justify-between text-sm text-gray-600">
-                <span>Sous-total:</span>
+                <span>Total Hors Taxe:</span>
                 <span>{calculateSubtotal().toLocaleString()} FDJ</span>
               </div>
 
@@ -499,7 +583,13 @@ export function QuoteForm({
               disabled={loading}
               className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
             >
-              {loading ? "Création..." : "Créer le devis"}
+              {loading
+                ? initialData
+                  ? "Modification..."
+                  : "Création..."
+                : initialData
+                  ? "Enregistrer les modifications"
+                  : "Créer le devis"}
             </button>
           </div>
         </form>

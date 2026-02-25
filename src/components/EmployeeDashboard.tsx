@@ -112,22 +112,20 @@ export function EmployeeDashboard() {
         )}
       </main>
 
-{showForm && company && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <QuoteForm
-            companyId={company.id}
-            initialData={editData}
-            onClose={() => {
-              setShowForm(false);
-              setEditData(null);
-            }}
-            onSuccess={() => {
-              setShowForm(false);
-              setEditData(null);
-              setQuotesRefreshToken((token) => token + 1);
-            }}
-          />
-        </div>
+      {showForm && company && (
+        <QuoteForm
+          companyId={company.id}
+          initialData={editData}
+          onClose={() => {
+            setShowForm(false);
+            setEditData(null);
+          }}
+          onSuccess={() => {
+            setShowForm(false);
+            setEditData(null);
+            setQuotesRefreshToken((token) => token + 1);
+          }}
+        />
       )}
 
       {selectedQuote && (

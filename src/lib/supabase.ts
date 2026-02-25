@@ -28,6 +28,9 @@ export type Company = {
   signature_url: string | null;
   employer_id: string;
   created_at: string;
+  email: string | null;
+  phone: string | null;
+  wallets: { type: string; address: string }[] | null;
 };
 
 export type Quote = {
@@ -54,6 +57,9 @@ export type QuoteItem = {
   description: string;
   quantity: number;
   unit_price: number;
+  square_meters?: number | null;
+  width?: number | null;
+  length?: number | null;
   total_price: number;
   created_at: string;
 };

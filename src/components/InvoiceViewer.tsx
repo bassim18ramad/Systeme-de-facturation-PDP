@@ -74,6 +74,8 @@ export function InvoiceViewer({ invoice, onClose }: InvoiceViewerProps) {
           items: invoice.delivery_order.quote.items.map((item) => ({
             description: item.description,
             quantity: item.quantity,
+            width: item.width || undefined,
+            length: item.length || undefined,
             unitPrice: item.unit_price,
             total: item.total_price,
           })),
@@ -150,6 +152,12 @@ export function InvoiceViewer({ invoice, onClose }: InvoiceViewerProps) {
               <p className="text-lg font-medium text-gray-900">
                 {company?.name}
               </p>
+              {company?.email && (
+                <p className="text-sm text-gray-600">{company.email}</p>
+              )}
+              {company?.phone && (
+                <p className="text-sm text-gray-600">{company.phone}</p>
+              )}
             </div>
 
             <div>
@@ -159,7 +167,9 @@ export function InvoiceViewer({ invoice, onClose }: InvoiceViewerProps) {
               <p className="text-lg font-medium text-gray-900">
                 {quote?.client_name}
               </p>
-              <p className="text-sm text-gray-600">{quote?.client_email}</p>
+              {quote?.client_email && (
+                <p className="text-sm text-gray-600">{quote.client_email}</p>
+              )}
               {quote?.client_phone && (
                 <p className="text-sm text-gray-600">{quote.client_phone}</p>
               )}
@@ -197,6 +207,11 @@ export function InvoiceViewer({ invoice, onClose }: InvoiceViewerProps) {
                 <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
                   Description
                 </th>
+                {quote?.items?.some((i) => i.width && i.length) && (
+                  <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
+                    Dimensions (m)
+                  </th>
+                )}
                 <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
                   Quantité
                 </th>
@@ -214,6 +229,13 @@ export function InvoiceViewer({ invoice, onClose }: InvoiceViewerProps) {
                   <td className="px-4 py-3 text-sm text-gray-900">
                     {item.description}
                   </td>
+                  {quote?.items?.some((i) => i.width && i.length) && (
+                    <td className="px-4 py-3 text-sm text-gray-900 text-right font-mono">
+                      {item.width && item.length
+                        ? `${Number(item.width)} x ${Number(item.length)}`
+                        : "-"}
+                    </td>
+                  )}
                   <td className="px-4 py-3 text-sm text-gray-900 text-right">
                     {item.quantity}
                   </td>
@@ -229,7 +251,9 @@ export function InvoiceViewer({ invoice, onClose }: InvoiceViewerProps) {
             <tfoot className="bg-gray-50">
               <tr>
                 <td
-                  colSpan={3}
+                  colSpan={
+                    quote?.items?.some((i) => i.width && i.length) ? 4 : 3
+                  }
                   className="px-4 py-3 text-right text-base font-semibold text-gray-900"
                 >
                   Total
@@ -258,6 +282,28 @@ export function InvoiceViewer({ invoice, onClose }: InvoiceViewerProps) {
                 alt="Signature"
                 className="h-16 object-contain"
               />
+            </div>
+          )}
+          {company?.wallets && company.wallets.length > 0 && (
+            <div className="mt-8 pt-6 border-t border-gray-100">
+              <h4 className="text-sm font-semibold text-gray-900 mb-3 text-center">
+                Moyens de paiement acceptés
+              </h4>
+              <div className="flex flex-wrap justify-center gap-4">
+                {company.wallets.map((wallet: any, index: number) => (
+                  <div
+                    key={index}
+                    className="inline-flex items-center px-3 py-1.5 rounded-md bg-gray-50 border border-gray-100"
+                  >
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider mr-2">
+                      {wallet.type}:
+                    </span>
+                    <span className="text-sm font-medium text-gray-900 font-mono">
+                      {wallet.address}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

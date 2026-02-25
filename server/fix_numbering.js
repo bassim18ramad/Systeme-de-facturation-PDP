@@ -15,23 +15,25 @@ async function fixNumbering() {
     console.log("Starting numbering update...");
 
     // 1. Get all companies
-    const { rows: companies } = await client.query("SELECT id, name FROM companies");
-    
+    const { rows: companies } = await client.query(
+      "SELECT id, name FROM companies",
+    );
+
     for (const company of companies) {
       console.log(`Processing company: ${company.name} (${company.id})`);
-      
+
       const acronym = company.name
         .split(" ")
-        .map(w => w[0])
+        .map((w) => w[0])
         .join("")
         .toUpperCase();
-        
+
       if (!acronym) continue;
 
       // --- QUOTES ---
       const { rows: quotes } = await client.query(
         "SELECT id, created_at FROM quotes WHERE company_id = $1 ORDER BY created_at ASC",
-        [company.id]
+        [company.id],
       );
 
       // Group by year
@@ -45,8 +47,11 @@ async function fixNumbering() {
       for (const year in quotesByYear) {
         let seq = 1;
         for (const q of quotesByYear[year]) {
-          const newNumber = `${acronym}_DEV-${year}${seq.toString().padStart(5, "0")}`;
-          await client.query("UPDATE quotes SET quote_number = $1 WHERE id = $2", [newNumber, q.id]);
+          const newNumber = `${acronym}/DEV-${year}${seq.toString().padStart(5, "0")}`;
+          await client.query(
+            "UPDATE quotes SET quote_number = $1 WHERE id = $2",
+            [newNumber, q.id],
+          );
           seq++;
         }
       }
@@ -55,7 +60,7 @@ async function fixNumbering() {
       // --- DELIVERY ORDERS ---
       const { rows: orders } = await client.query(
         "SELECT id, created_at FROM delivery_orders WHERE company_id = $1 ORDER BY created_at ASC",
-        [company.id]
+        [company.id],
       );
 
       const ordersByYear = {};
@@ -68,8 +73,11 @@ async function fixNumbering() {
       for (const year in ordersByYear) {
         let seq = 1;
         for (const o of ordersByYear[year]) {
-          const newNumber = `${acronym}_CMD-${year}${seq.toString().padStart(5, "0")}`;
-          await client.query("UPDATE delivery_orders SET order_number = $1 WHERE id = $2", [newNumber, o.id]);
+          const newNumber = `${acronym}/CMD-${year}${seq.toString().padStart(5, "0")}`;
+          await client.query(
+            "UPDATE delivery_orders SET order_number = $1 WHERE id = $2",
+            [newNumber, o.id],
+          );
           seq++;
         }
       }
@@ -78,7 +86,7 @@ async function fixNumbering() {
       // --- INVOICES ---
       const { rows: invoices } = await client.query(
         "SELECT id, created_at FROM invoices WHERE company_id = $1 ORDER BY created_at ASC",
-        [company.id]
+        [company.id],
       );
 
       const invoicesByYear = {};
@@ -91,8 +99,11 @@ async function fixNumbering() {
       for (const year in invoicesByYear) {
         let seq = 1;
         for (const i of invoicesByYear[year]) {
-          const newNumber = `${acronym}_FACT-${year}${seq.toString().padStart(5, "0")}`;
-          await client.query("UPDATE invoices SET invoice_number = $1 WHERE id = $2", [newNumber, i.id]);
+          const newNumber = `${acronym}/FACT-${year}${seq.toString().padStart(5, "0")}`;
+          await client.query(
+            "UPDATE invoices SET invoice_number = $1 WHERE id = $2",
+            [newNumber, i.id],
+          );
           seq++;
         }
       }

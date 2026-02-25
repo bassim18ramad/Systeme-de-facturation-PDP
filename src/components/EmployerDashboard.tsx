@@ -38,6 +38,8 @@ export function EmployerDashboard() {
 
   const [companies, setCompanies] = useState<Company[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
+  const [showQuoteForm, setShowQuoteForm] = useState(false);
+  const [quotesRefreshToken, setQuotesRefreshToken] = useState(0);
   const [stats, setStats] = useState({
     totalQuotes: 0,
     orderedQuotes: 0,
@@ -350,12 +352,33 @@ export function EmployerDashboard() {
             ) : selectedCompany ? (
               <div className="animate-fade-in">
                 {activeTab === "quotes" && (
-                  <QuotesList
-                    companyId={selectedCompany.id}
-                    onUpdate={loadStats}
-                    onViewQuote={setViewQuote}
-                    onEditQuote={setEditQuote}
-                  />
+                  <>
+                    <div className="flex justify-end mb-4">
+                      <button
+                        onClick={() => {
+                          setEditQuote(null);
+                          setShowQuoteForm(true);
+                        }}
+                        className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 hover:shadow-md transition-all duration-200"
+                      >
+                        <Plus className="w-5 h-5" />
+                        <span>Nouveau Devis</span>
+                      </button>
+                    </div>
+                    <QuotesList
+                      companyId={selectedCompany.id}
+                      onUpdate={() => {
+                        loadStats();
+                        setQuotesRefreshToken((prev) => prev + 1);
+                      }}
+                      onViewQuote={setViewQuote}
+                      onEditQuote={(quote) => {
+                        setEditQuote(quote);
+                        setShowQuoteForm(true);
+                      }}
+                      refreshToken={quotesRefreshToken}
+                    />
+                  </>
                 )}
                 {activeTab === "orders" && (
                   <DeliveryOrdersList
@@ -398,28 +421,21 @@ export function EmployerDashboard() {
       </main>
 
       {/* Modals rendered at root level */}
-      {editQuote && selectedCompany && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <QuoteForm
-              companyId={selectedCompany.id}
-              initialData={editQuote}
-              onClose={() => setEditQuote(null)}
-              onSuccess={() => {
-                setEditQuote(null);
-                loadStats();
-                // We might need to refresh quote list, usually loadStats does not trigger list refresh inside component
-                // Ideally, pass a toggle or a callback that QuotesList listens to. 
-                // But since QuotesList accepts 'onUpdate', let's stick to simple
-                // window reload or depend on React key change if needed.
-                // For now, loadStats updates stats, but list might be stale.
-                // Triggering a re-render of QuotesList via key/refresh prop would be better.
-                // We will rely on user refresh or optimistic update if complex.
-                // Actually, QuoteList has 'refreshToken' prop? No, I just added it to EmployeeDashboard.
-                // Simple hack: toggle tab or reload.
-                window.location.reload(); 
-              }}
-            />
-        </div>
+      {showQuoteForm && selectedCompany && (
+        <QuoteForm
+          companyId={selectedCompany.id}
+          initialData={editQuote}
+          onClose={() => {
+            setShowQuoteForm(false);
+            setEditQuote(null);
+          }}
+          onSuccess={() => {
+            setShowQuoteForm(false);
+            setEditQuote(null);
+            setQuotesRefreshToken((prev) => prev + 1);
+            loadStats();
+          }}
+        />
       )}
       {viewQuote && (
         <QuoteViewer quote={viewQuote} onClose={() => setViewQuote(null)} />

@@ -300,6 +300,8 @@ export function InvoicesList({
           items: items.map((item) => ({
             description: item.description,
             quantity: item.quantity,
+            width: item.width || undefined,
+            length: item.length || undefined,
             unitPrice: item.unit_price,
             total: item.total_price,
           })),

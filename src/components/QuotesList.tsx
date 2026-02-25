@@ -183,14 +183,17 @@ export function QuotesList({
       : "ENT";
 
     const currentYear = new Date().getFullYear();
-    const prefix = `${companyName}_CMD-${currentYear}`;
+    const prefix = `${companyName}/CMD-${currentYear}`;
 
     // Find last order to increment sequence
     const { data: lastOrder } = await supabase
       .from("delivery_orders")
       .select("order_number")
       .eq("company_id", quote.company_id)
-      .ilike("order_number", `${prefix}%`)
+      // Search for both formats
+      .or(
+        `order_number.ilike.${companyName}_CMD-${currentYear}%,order_number.ilike.${companyName}/CMD-${currentYear}%`,
+      )
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -198,13 +201,13 @@ export function QuotesList({
     let sequence = 1;
     if (lastOrder && lastOrder.order_number) {
       const parts = lastOrder.order_number.split("-");
-      const lastSeqPart = parts[parts.length - 1]; 
+      const lastSeqPart = parts[parts.length - 1];
       if (lastSeqPart.length >= 5) {
-          const seqStr = lastSeqPart.slice(-5);
-          const seqNum = parseInt(seqStr);
-          if (!isNaN(seqNum)) {
-            sequence = seqNum + 1;
-          }
+        const seqStr = lastSeqPart.slice(-5);
+        const seqNum = parseInt(seqStr);
+        if (!isNaN(seqNum)) {
+          sequence = seqNum + 1;
+        }
       }
     }
 
@@ -350,6 +353,8 @@ export function QuotesList({
           items: items.map((item) => ({
             description: item.description,
             quantity: item.quantity,
+            width: item.width || undefined,
+            length: item.length || undefined,
             unitPrice: item.unit_price,
             total: item.total_price,
           })),

@@ -20,6 +20,9 @@ export function CompanySettings({ company, onUpdate }: CompanySettingsProps) {
     name: company?.name || "",
     logo_url: company?.logo_url || "",
     signature_url: company?.signature_url || "",
+    email: company?.email || "",
+    phone: company?.phone || "",
+    wallets: company?.wallets || [],
   });
 
   useEffect(() => {
@@ -28,8 +31,35 @@ export function CompanySettings({ company, onUpdate }: CompanySettingsProps) {
       name: company?.name || "",
       logo_url: company?.logo_url || "",
       signature_url: company?.signature_url || "",
+      email: company?.email || "",
+      phone: company?.phone || "",
+      wallets: company?.wallets || [],
     });
   }, [company]);
+
+  const addWallet = () => {
+    setFormData((prev) => ({
+      ...prev,
+      wallets: [...(prev.wallets || []), { type: "", address: "" }],
+    }));
+  };
+
+  const updateWallet = (
+    index: number,
+    field: "type" | "address",
+    value: string,
+  ) => {
+    const newWallets = [...(formData.wallets || [])];
+    newWallets[index] = { ...newWallets[index], [field]: value };
+    setFormData((prev) => ({ ...prev, wallets: newWallets }));
+  };
+
+  const removeWallet = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      wallets: (prev.wallets || []).filter((_, i) => i !== index),
+    }));
+  };
 
   async function uploadImage(file: File, type: "logo" | "signature") {
     if (!profile?.id) {
@@ -106,13 +136,24 @@ export function CompanySettings({ company, onUpdate }: CompanySettingsProps) {
         return;
       }
       if (company) {
+        // Handle update
+        const updates: any = {
+          name: formData.name,
+          logo_url: formData.logo_url || null,
+          signature_url: formData.signature_url || null,
+          email: formData.email || null,
+          phone: formData.phone || null,
+          wallets: formData.wallets || [],
+        };
+
+        // Remove undefined fields just in case
+        Object.keys(updates).forEach(
+          (key) => updates[key] === undefined && delete updates[key],
+        );
+
         const { error: updateError } = await supabase
           .from("companies")
-          .update({
-            name: formData.name,
-            logo_url: formData.logo_url || null,
-            signature_url: formData.signature_url || null,
-          })
+          .update(updates)
           .eq("id", company.id);
 
         if (updateError) throw updateError;
@@ -122,6 +163,9 @@ export function CompanySettings({ company, onUpdate }: CompanySettingsProps) {
           name: formData.name,
           logo_url: formData.logo_url || null,
           signature_url: formData.signature_url || null,
+          email: formData.email || null,
+          phone: formData.phone || null,
+          wallets: formData.wallets || [],
           employer_id: profile?.id,
         });
 
@@ -170,6 +214,79 @@ export function CompanySettings({ company, onUpdate }: CompanySettingsProps) {
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
           />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Email de l'entreprise
+            </label>
+            <input
+              type="email"
+              value={formData.email}
+              onChange={(e) =>
+                setFormData({ ...formData, email: e.target.value })
+              }
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              placeholder="contact@entreprise.com"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Téléphone de l'entreprise
+            </label>
+            <input
+              type="tel"
+              value={formData.phone}
+              onChange={(e) =>
+                setFormData({ ...formData, phone: e.target.value })
+              }
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              placeholder="+253 77 00 00 00"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Comptes Wallet
+          </label>
+          <div className="space-y-3">
+            {(formData.wallets || []).map((wallet, index) => (
+              <div key={index} className="flex gap-3">
+                <input
+                  type="text"
+                  value={wallet.type}
+                  onChange={(e) => updateWallet(index, "type", e.target.value)}
+                  placeholder="Type (ex: USDT, Orange Money)"
+                  className="w-1/3 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="text"
+                  value={wallet.address}
+                  onChange={(e) =>
+                    updateWallet(index, "address", e.target.value)
+                  }
+                  placeholder="Adresse ou Numéro"
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeWallet(index)}
+                  className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                >
+                  <Trash2 className="w-5 h-5" />
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={addWallet}
+              className="mt-2 text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+            >
+              <Plus className="w-4 h-4" /> Ajouter un wallet
+            </button>
+          </div>
         </div>
 
         <div>

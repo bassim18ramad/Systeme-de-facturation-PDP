@@ -19,6 +19,8 @@ type DocumentData = {
     description: string;
     quantity: number;
     unitPrice: number;
+    width?: number;
+    length?: number;
     total: number;
   }[];
   total: number;
@@ -57,27 +59,29 @@ export function downloadDocument(
     const opt = {
       margin: 10,
       filename: `${data.type}_${data.number}.pdf`,
-      image: { type: "jpeg", quality: 0.98 },
+      image: { type: "jpeg" as const, quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true },
-      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+      jsPDF: {
+        unit: "mm" as const,
+        format: "a4" as const,
+        orientation: "portrait" as const,
+      },
     };
 
-    html2pdf()
-      .from(content)
-      .set(opt)
-      .save()
+    waitForImages(content)
       .then(() => {
-        // If we used a window for loading status, strict adherence to user request "don't show print dialog"
-        // means we shouldn't have opened a window, OR we should close it now.
-        // Assuming the caller might handle window closure or we can close existingWindow if provided.
+        return html2pdf().from(content).set(opt).save();
+      })
+      .then(() => {
         if (existingWindow) {
           existingWindow.close();
         }
       })
-      .catch((err: any) => {
+      .catch((err: unknown) => {
         console.error("PDF generation failed", err);
+        const message = err instanceof Error ? err.message : String(err);
         if (existingWindow) {
-          existingWindow.document.body.innerHTML = `<div style="color:red;padding:20px;">Erreur lors de la génération du PDF: ${err.message || err}</div>`;
+          existingWindow.document.body.innerHTML = `<div style="color:red;padding:20px;">Erreur lors de la génération du PDF: ${message}</div>`;
         } else {
           alert("Erreur lors de la génération du PDF");
         }
@@ -129,8 +133,44 @@ export function downloadDocument(
   }
 }
 
+function waitForImages(container: HTMLElement): Promise<void> {
+  const images = Array.from(container.querySelectorAll("img"));
+  if (images.length === 0) {
+    return Promise.resolve();
+  }
+
+  return Promise.all(
+    images.map(
+      (img) =>
+        new Promise<void>((resolve) => {
+          if (img.complete && img.naturalWidth > 0) {
+            resolve();
+            return;
+          }
+          const done = () => resolve();
+          img.addEventListener("load", done, { once: true });
+          img.addEventListener("error", done, { once: true });
+        }),
+    ),
+  ).then(() => undefined);
+}
+
 function generateHTML(data: DocumentData): string {
   const title = documentTitles[data.type];
+  const hasDimensions = data.items.some((item) => item.width && item.length);
+  const subtotal = data.items.reduce(
+    (sum, item) => sum + Number(item.total),
+    0,
+  );
+  const tva = data.include_tva ? subtotal * 0.1 : 0;
+  const stampDuty =
+    data.stamp_duty && data.stamp_duty > 0 ? Number(data.stamp_duty) : 0;
+  const logoUrl = data.company.logo_url
+    ? `${data.company.logo_url}${data.company.logo_url.includes("?") ? "&" : "?"}v=${Date.now()}`
+    : null;
+  const signatureUrl = data.company.signature_url
+    ? `${data.company.signature_url}${data.company.signature_url.includes("?") ? "&" : "?"}v=${Date.now()}`
+    : null;
 
   return `
 <!DOCTYPE html>
@@ -147,172 +187,274 @@ function generateHTML(data: DocumentData): string {
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      line-height: 1.6;
-      color: #1f2937;
-      padding: 40px;
-      background: white;
+      line-height: 1.5;
+      color: #0f172a;
+      padding: 34px;
+      background: #f8fafc;
+    }
+
+    .page {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 14px;
+      padding: 28px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
     }
 
     .header {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      margin-bottom: 40px;
-      padding-bottom: 20px;
-      border-bottom: 3px solid #2563eb;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 2px solid #e2e8f0;
     }
 
     .logo {
-      max-height: 80px;
+      max-height: 72px;
       max-width: 200px;
+      object-fit: contain;
+    }
+
+    .company-name {
+      font-size: 22px;
+      font-weight: 800;
+      color: #0f172a;
+      letter-spacing: 0.2px;
     }
 
     .document-title {
       text-align: right;
     }
 
-    .document-title h1 {
-      font-size: 32px;
+    .type-pill {
+      display: inline-block;
+      background: #dbeafe;
+      color: #1d4ed8;
+      font-size: 11px;
       font-weight: 700;
-      color: #2563eb;
+      letter-spacing: 0.7px;
+      text-transform: uppercase;
+      padding: 4px 10px;
+      border-radius: 999px;
       margin-bottom: 8px;
     }
 
+    .document-title h1 {
+      font-size: 30px;
+      font-weight: 800;
+      color: #0f172a;
+      margin-bottom: 6px;
+      line-height: 1.1;
+    }
+
     .document-title .number {
-      font-size: 18px;
-      color: #6b7280;
+      font-size: 14px;
+      color: #475569;
+      font-weight: 600;
+    }
+
+    .meta-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding: 10px 12px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      color: #475569;
+      font-size: 13px;
+      font-weight: 600;
     }
 
     .parties {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 40px;
-      margin-bottom: 40px;
+      gap: 14px;
+      margin-bottom: 20px;
     }
 
     .party {
-      background: #f9fafb;
-      padding: 20px;
-      border-radius: 8px;
+      background: #f8fafc;
+      padding: 14px;
+      border-radius: 10px;
+      border: 1px solid #e2e8f0;
     }
 
     .party h3 {
-      font-size: 12px;
-      font-weight: 600;
+      font-size: 11px;
+      font-weight: 700;
       text-transform: uppercase;
-      color: #6b7280;
-      margin-bottom: 12px;
-      letter-spacing: 0.5px;
+      color: #64748b;
+      margin-bottom: 8px;
+      letter-spacing: 0.6px;
     }
 
     .party p {
-      font-size: 14px;
-      color: #374151;
-      margin-bottom: 4px;
+      font-size: 13px;
+      color: #334155;
+      margin-bottom: 2px;
+      word-break: break-word;
     }
 
     .party .name {
-      font-size: 18px;
-      font-weight: 600;
-      color: #1f2937;
-      margin-bottom: 8px;
-    }
-
-    .date-info {
-      margin-bottom: 30px;
-      font-size: 14px;
-      color: #6b7280;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 30px;
-    }
-
-    thead {
-      background: #f3f4f6;
-    }
-
-    th {
-      padding: 12px;
-      text-align: left;
-      font-size: 12px;
-      font-weight: 600;
-      text-transform: uppercase;
-      color: #6b7280;
-      border-bottom: 2px solid #e5e7eb;
-    }
-
-    th.right {
-      text-align: right;
-    }
-
-    td {
-      padding: 12px;
-      font-size: 14px;
-      color: #374151;
-      border-bottom: 1px solid #e5e7eb;
-    }
-
-    td.right {
-      text-align: right;
-    }
-
-    .total-row {
-      background: #f9fafb;
-      font-weight: 600;
-    }
-
-    .total-row td {
-      padding: 16px 12px;
       font-size: 16px;
-      color: #1f2937;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 6px;
+    }
+
+    .items-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      margin-bottom: 18px;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .items-table thead {
+      background: linear-gradient(90deg, #eff6ff 0%, #f8fafc 100%);
+    }
+
+    .items-table th {
+      padding: 10px 12px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #475569;
+      border-bottom: 1px solid #e2e8f0;
+      letter-spacing: 0.6px;
+      white-space: nowrap;
+    }
+
+    .items-table th.right {
+      text-align: right;
+    }
+
+    .items-table td {
+      padding: 10px 12px;
+      font-size: 13px;
+      color: #334155;
+      border-bottom: 1px solid #f1f5f9;
+      vertical-align: top;
+    }
+
+    .items-table td.right {
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .items-table tbody tr:last-child td {
       border-bottom: none;
     }
 
+    .summary {
+      margin-left: auto;
+      width: 360px;
+      max-width: 100%;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      margin-bottom: 14px;
+    }
+
+    .summary-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      color: #334155;
+      padding: 8px 0;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .summary-row:last-child {
+      border-bottom: none;
+    }
+
+    .summary-total {
+      font-size: 16px;
+      font-weight: 800;
+      color: #0f172a;
+      padding-top: 10px;
+    }
+
     .notes {
-      background: #f9fafb;
-      padding: 20px;
-      border-radius: 8px;
-      margin-bottom: 30px;
+      background: #f8fafc;
+      padding: 14px;
+      border-radius: 10px;
+      border: 1px solid #e2e8f0;
+      margin-top: 10px;
     }
 
     .notes h3 {
-      font-size: 14px;
-      font-weight: 600;
-      color: #374151;
-      margin-bottom: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #64748b;
+      margin-bottom: 6px;
+      letter-spacing: 0.6px;
     }
 
     .notes p {
-      font-size: 14px;
-      color: #6b7280;
+      font-size: 13px;
+      color: #334155;
+      white-space: pre-line;
     }
 
     .signature {
-      margin-top: 40px;
+      margin-top: 12px;
+      display: inline-block;
     }
 
     .signature p {
-      font-size: 14px;
-      color: #6b7280;
-      margin-bottom: 8px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: #64748b;
+      margin-bottom: 6px;
+      font-weight: 700;
     }
 
     .signature img {
-      max-height: 80px;
-      max-width: 200px;
+      max-height: 70px;
+      max-width: 220px;
+      object-fit: contain;
+      display: block;
     }
 
     .footer {
-      margin-top: 40px;
-      padding-top: 20px;
-      border-top: 1px solid #e5e7eb;
-      font-size: 12px;
-      color: #9ca3af;
+      border-top: 1px solid #e2e8f0;
+      font-size: 11px;
+      color: #64748b;
       text-align: center;
+      padding-top: 12px;
+      margin-top: 16px;
     }
+
+    .wallets {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .wallet {
+      background: #eff6ff;
+      border: 1px solid #dbeafe;
+      color: #1e3a8a;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
 
     @media print {
       @page {
@@ -321,53 +463,72 @@ function generateHTML(data: DocumentData): string {
       }
       body {
         padding: 0;
+        background: #ffffff;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
       }
 
-      .footer {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
+      .page {
+        border: none;
+        box-shadow: none;
+        border-radius: 0;
+        padding: 0;
+      }
+
+      .items-table {
+        page-break-inside: auto;
+      }
+
+      .items-table tr {
+        page-break-inside: avoid;
+      }
+
+      .parties {
+        break-inside: avoid;
       }
     }
   </style>
 </head>
 <body>
-  <div class="header">
-    <div>
-      ${data.company.logo_url ? `<img src="${data.company.logo_url}" alt="Logo" class="logo">` : `<h2>${data.company.name}</h2>`}
-    </div>
-    <div class="document-title">
-      <h1>${title}</h1>
-      <div class="number">${data.number}</div>
-    </div>
-  </div>
-
-  <div class="parties">
-    <div class="party">
-      <h3>Entreprise</h3>
-      <p class="name">${data.company.name}</p>
+  <div class="page">
+    <div class="header">
+      <div>
+        ${logoUrl ? `<img src="${logoUrl}" alt="Logo" class="logo" crossorigin="anonymous" referrerpolicy="no-referrer">` : `<div class="company-name">${data.company.name}</div>`}
+      </div>
+      <div class="document-title">
+        <div class="type-pill">${title}</div>
+        <h1>${data.number}</h1>
+        <div class="number">Référence document</div>
+      </div>
     </div>
 
-    <div class="party">
-      <h3>Client</h3>
-      <p class="name">${data.client.name}</p>
-      <p>${data.client.email}</p>
-      ${data.client.phone ? `<p>${data.client.phone}</p>` : ""}
-      ${data.client.address ? `<p>${data.client.address}</p>` : ""}
+    <div class="meta-row">
+      <span>Date: ${data.date}</span>
+      <span>${data.items.length} article${data.items.length > 1 ? "s" : ""}</span>
     </div>
-  </div>
 
-  <div class="date-info">
-    Date: ${data.date}
-  </div>
+    <div class="parties">
+      <div class="party">
+        <h3>Entreprise</h3>
+        <p class="name">${data.company.name}</p>
+        ${data.company.email ? `<p>Email: ${data.company.email}</p>` : ""}
+        ${data.company.phone ? `<p>Tél: ${data.company.phone}</p>` : ""}
+      </div>
 
-  <table>
+      <div class="party">
+        <h3>Client</h3>
+        <p class="name">${data.client.name}</p>
+        ${data.client.email ? `<p>${data.client.email}</p>` : ""}
+        ${data.client.phone ? `<p>${data.client.phone}</p>` : ""}
+        ${data.client.address ? `<p>${data.client.address}</p>` : ""}
+      </div>
+    </div>
+
+  <table class="items-table">
     <thead>
       <tr>
         <th>Description</th>
+        ${hasDimensions ? '<th class="right">Dimensions (m)</th>' : ""}
         <th class="right">Quantité</th>
         <th class="right">Prix unitaire</th>
         <th class="right">Total</th>
@@ -379,6 +540,15 @@ function generateHTML(data: DocumentData): string {
           (item) => `
         <tr>
           <td>${item.description}</td>
+          ${
+            hasDimensions
+              ? `<td class="right">${
+                  item.width && item.length
+                    ? `${Number(item.width)} x ${Number(item.length)}`
+                    : "-"
+                }</td>`
+              : ""
+          }
           <td class="right">${item.quantity}</td>
           <td class="right">${Number(item.unitPrice).toFixed(2)} FDJ</td>
           <td class="right">${Number(item.total).toFixed(2)} FDJ</td>
@@ -387,66 +557,83 @@ function generateHTML(data: DocumentData): string {
         )
         .join("")}
     </tbody>
-    <tfoot>
-      <tr>
-        <td colspan="3" class="right">Sous-total</td>
-        <td class="right">${data.items
-          .reduce((sum, item) => sum + Number(item.total), 0)
-          .toFixed(2)} FDJ</td>
-      </tr>
+  </table>
+
+    <div class="summary">
+      <div class="summary-row">
+        <span>Sous-total</span>
+        <span>${subtotal.toFixed(2)} FDJ</span>
+      </div>
       ${
         data.include_tva
           ? `
-      <tr>
-        <td colspan="3" class="right">TVA (10%)</td>
-        <td class="right">${(
-          data.items.reduce((sum, item) => sum + Number(item.total), 0) * 0.1
-        ).toFixed(2)} FDJ</td>
-      </tr>
+      <div class="summary-row">
+        <span>TVA (10%)</span>
+        <span>${tva.toFixed(2)} FDJ</span>
+      </div>
       `
           : ""
       }
       ${
-        data.stamp_duty && data.stamp_duty > 0
+        stampDuty > 0
           ? `
-      <tr>
-        <td colspan="3" class="right">Frais de timbre</td>
-        <td class="right">${Number(data.stamp_duty).toFixed(2)} FDJ</td>
-      </tr>
+      <div class="summary-row">
+        <span>Frais de timbre</span>
+        <span>${stampDuty.toFixed(2)} FDJ</span>
+      </div>
       `
           : ""
       }
-      <tr class="total-row">
-        <td colspan="3" class="right">Total</td>
-        <td class="right">${Number(data.total).toFixed(2)} FDJ</td>
-      </tr>
-    </tfoot>
-  </table>
-
-  ${
-    data.notes
-      ? `
-    <div class="notes">
-      <h3>Notes</h3>
-      <p>${data.notes}</p>
+      <div class="summary-row summary-total">
+        <span>Total</span>
+        <span>${Number(data.total).toFixed(2)} FDJ</span>
+      </div>
     </div>
-  `
-      : ""
-  }
 
-  ${
-    data.company.signature_url
-      ? `
-    <div class="signature">
-      <p>Signature</p>
-      <img src="${data.company.signature_url}" alt="Signature">
+    ${
+      data.notes
+        ? `
+      <div class="notes">
+        <h3>Notes</h3>
+        <p>${data.notes}</p>
+      </div>
+    `
+        : ""
+    }
+
+    ${
+      signatureUrl
+        ? `
+      <div class="signature">
+        <p>Signature</p>
+        <img src="${signatureUrl}" alt="Signature" crossorigin="anonymous" referrerpolicy="no-referrer">
+      </div>
+    `
+        : ""
+    }
+
+    <div class="footer">
+      ${
+        data.company.wallets && data.company.wallets.length > 0
+          ? `
+        <div class="wallets">
+          ${data.company.wallets
+            .map(
+              (w) => `
+            <div class="wallet">
+              ${w.type}: ${w.address}
+            </div>
+          `,
+            )
+            .join("")}
+        </div>
+        `
+          : ""
+      }
+      <div>
+        Document téléchargé par ${data.downloadedBy} le ${new Date().toLocaleDateString("fr-FR")} à ${new Date().toLocaleTimeString("fr-FR")}
+      </div>
     </div>
-  `
-      : ""
-  }
-
-  <div class="footer">
-    Document téléchargé par ${data.downloadedBy} le ${new Date().toLocaleDateString("fr-FR")} à ${new Date().toLocaleTimeString("fr-FR")}
   </div>
 </body>
 </html>

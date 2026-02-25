@@ -57,6 +57,9 @@ export function DeliveryOrdersList({
   const [selectedOrder, setSelectedOrder] = useState<OrderWithDetails | null>(
     null,
   );
+  const [convertedOrderIds, setConvertedOrderIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [searchTerm, setSearchTerm] = useState("");
   const [sortConfig, setSortConfig] = useState<{
     key: keyof DeliveryOrder;
@@ -125,6 +128,17 @@ export function DeliveryOrdersList({
 
     if (!error && data) {
       setOrders(data);
+
+      const { data: invoicesData } = await supabase
+        .from("invoices")
+        .select("delivery_order_id")
+        .eq("company_id", companyId);
+
+      if (invoicesData) {
+        setConvertedOrderIds(
+          new Set(invoicesData.map((inv: any) => inv.delivery_order_id)),
+        );
+      }
     }
     setLoading(false);
   }
@@ -176,14 +190,17 @@ export function DeliveryOrdersList({
       : "ENT";
 
     const currentYear = new Date().getFullYear();
-    const prefix = `${companyName}_FACT-${currentYear}`;
+    const prefix = `${companyName}/FACT-${currentYear}`;
 
     // Find last invoice to increment sequence
     const { data: lastInvoice } = await supabase
       .from("invoices")
       .select("invoice_number")
       .eq("company_id", order.company_id)
-      .ilike("invoice_number", `${prefix}%`)
+      // Search for both formats
+      .or(
+        `invoice_number.ilike.${companyName}_FACT-${currentYear}%,invoice_number.ilike.${companyName}/FACT-${currentYear}%`,
+      )
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -193,11 +210,11 @@ export function DeliveryOrdersList({
       const parts = lastInvoice.invoice_number.split("-");
       const lastSeqPart = parts[parts.length - 1]; // e.g., 202600001
       if (lastSeqPart.length >= 5) {
-          const seqStr = lastSeqPart.slice(-5);
-          const seqNum = parseInt(seqStr);
-          if (!isNaN(seqNum)) {
-            sequence = seqNum + 1;
-          }
+        const seqStr = lastSeqPart.slice(-5);
+        const seqNum = parseInt(seqStr);
+        if (!isNaN(seqNum)) {
+          sequence = seqNum + 1;
+        }
       }
     }
 
@@ -334,6 +351,8 @@ export function DeliveryOrdersList({
           items: items.map((item) => ({
             description: item.description,
             quantity: item.quantity,
+            width: item.width || undefined,
+            length: item.length || undefined,
             unitPrice: item.unit_price,
             total: item.total_price,
           })),
@@ -535,15 +554,16 @@ export function DeliveryOrdersList({
                             <Truck className="w-5 h-5" />
                           </button>
                         )}
-                        {order.status === "delivered" && (
-                          <button
-                            onClick={() => convertToInvoice(order)}
-                            className="p-1 text-emerald-600 hover:text-emerald-900 hover:bg-emerald-50 rounded-full transition-colors"
-                            title="Convertir en facture"
-                          >
-                            <ArrowRight className="w-5 h-5" />
-                          </button>
-                        )}
+                        {order.status === "delivered" &&
+                          !convertedOrderIds.has(order.id) && (
+                            <button
+                              onClick={() => convertToInvoice(order)}
+                              className="p-1 text-emerald-600 hover:text-emerald-900 hover:bg-emerald-50 rounded-full transition-colors"
+                              title="Convertir en facture"
+                            >
+                              <ArrowRight className="w-5 h-5" />
+                            </button>
+                          )}
                       </div>
                     </td>
                   </tr>
