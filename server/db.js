@@ -28,7 +28,7 @@ try {
       host: url.hostname,
       port: url.port || 5432,
       database: url.pathname.split("/")[1],
-      ssl: false,
+      ssl: { rejectUnauthorized: false },
     };
     console.log("✅ Parsed connection string manually.");
   }
